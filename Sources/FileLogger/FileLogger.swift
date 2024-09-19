@@ -2,8 +2,9 @@ import Foundation
 import Logging
 
 public struct FileLogger: LogHandler {
-  private let stream: FileOutputStream
   private var label: String
+  private let stream: FileOutputStream
+  private let maxFileSize: UInt64
 
   public var logLevel: Logger.Level = .info
 
@@ -18,21 +19,56 @@ public struct FileLogger: LogHandler {
     }
   }
 
-  public init(label: String, localFile url: URL) throws {
+  public init(
+    label: String,
+    fileURL: URL,
+    maxFileSize: UInt64 = 1024 * 1024 * 10
+  ) throws {
     self.label = label
-    self.stream = try FileOutputStream(url: url)
+    self.stream = try FileOutputStream(url: fileURL)
+    self.maxFileSize = maxFileSize
   }
 
-  init(label: String, stream: FileOutputStream) {
+  init(
+    label: String,
+    fileURL: URL,
+    maxFileSize: UInt64 = 1024 * 1024 * 10,
+    stream: FileOutputStream
+  ) {
     self.label = label
+    self.maxFileSize = maxFileSize
     self.stream = stream
   }
 
-  static func handler(url: URL) throws -> @Sendable (String) -> any LogHandler {
+  static func handler(
+    url: URL,
+    maxFileSize: UInt64 = 1024 * 1024 * 10
+  ) throws -> @Sendable (String) -> any LogHandler {
+    if let size = try? getFileSize(file: url) {
+      do {
+        if size > maxFileSize {
+          // Append "-archived" to the file name.
+          let archivedFileURL = url.deletingPathExtension()
+            .appendingPathExtension("archived.\(UUID().uuidString.prefix(8))")
+            .appendingPathExtension(url.pathExtension)
+
+          // Move the current file to the archived file.
+          try FileManager.default.moveItem(at: url, to: archivedFileURL)
+        }
+      } catch {
+        print("Failed to rotate file: \(error)")
+      }
+    }
+
     let stream = try FileOutputStream(url: url)
 
     return { label in
-      Self(label: label, stream: stream)
+      Self(
+        label: label,
+        fileURL: url,
+        maxFileSize: maxFileSize,
+        stream: stream
+      )
     }
   }
 

@@ -19,86 +19,127 @@ func getDocumentsDirectory() throws -> URL {
   return paths[0]
 }
 
-func getFileSize(file: URL) throws -> UInt64 {
-  let attr = try FileManager.default.attributesOfItem(atPath: file.path)
-  guard let fileSize = attr[FileAttributeKey.size] as? UInt64 else {
-    throw TestError.cannotGetFileSize
+@Suite(.serialized) struct FileLoggerTests {
+  func createLogsDirectory() throws -> URL {
+    let logsDirectoryURL = try getDocumentsDirectory().appendingPathComponent(
+      "Logs", isDirectory: true)
+
+    if !FileManager.default.fileExists(atPath: logsDirectoryURL.path) {
+      try FileManager.default.createDirectory(
+        at: logsDirectoryURL, withIntermediateDirectories: true, attributes: nil
+      )
+    }
+
+    return logsDirectoryURL
   }
 
-  return fileSize
-}
+  func deleteLogsDirectory() throws {
+    try FileManager.default.removeItem(
+      at: try getDocumentsDirectory().appendingPathComponent("Logs")
+    )
+  }
 
-@Test func logToFileUsingBootstrap() async throws {
-  let logFileName = "logToFileUsingBootstrap.txt"
-  let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
+  @Test func logToFileUsingBootstrap() throws {
+    let logFileName = "logToFileUsingBootstrap.txt"
+    let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
 
-  print("File location: \(logFileURL)")
+    print("File location: \(logFileURL)")
 
-  if FileManager.default.fileExists(atPath: logFileURL.path) {
+    if FileManager.default.fileExists(atPath: logFileURL.path) {
+      try FileManager.default.removeItem(at: logFileURL)
+    }
+
+    try LoggingSystem.bootstrapInternal(
+      FileLogger.handler(url: logFileURL)
+    )
+
+    let logger = Logger(label: "Test")
+    logger.error("An error has occured. This is a test.")
+
+    #expect(FileManager.default.fileExists(atPath: logFileURL.path))
+
     try FileManager.default.removeItem(at: logFileURL)
   }
 
-  try LoggingSystem.bootstrapInternal(
-    FileLogger.handler(url: logFileURL)
-  )
+  @Test func logToFileAppends() async throws {
+    let logFileName = "logToFileAppends.txt"
+    let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
 
-  let logger = Logger(label: "Test")
-  logger.error("An error has occured. This is a test.")
+    print("File location: \(logFileURL)")
 
-  #expect(FileManager.default.fileExists(atPath: logFileURL.path))
+    if FileManager.default.fileExists(atPath: logFileURL.path) {
+      try FileManager.default.removeItem(at: logFileURL)
+    }
 
-  try FileManager.default.removeItem(at: logFileURL)
-}
+    try LoggingSystem.bootstrapInternal(
+      FileLogger.handler(url: logFileURL)
+    )
 
-@Test func logToFileAppends() async throws {
-  let logFileName = "logToFileAppends.txt"
-  let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
+    let logger = Logger(label: "Test")
+    logger.error("An error has occurred. This is a test.")
+    let fileSize1 = try getFileSize(file: logFileURL)
 
-  print("File location: \(logFileURL)")
+    logger.error("An error has occurred. This is a test.")
+    let fileSize2 = try getFileSize(file: logFileURL)
 
-  if FileManager.default.fileExists(atPath: logFileURL.path) {
+    #expect(fileSize2 > fileSize1)
+
     try FileManager.default.removeItem(at: logFileURL)
   }
 
-  try LoggingSystem.bootstrapInternal(
-    FileLogger.handler(url: logFileURL)
-  )
+  @Test func logToFileAppendsMultipleLoggers() async throws {
+    let logFileName = "logToFileAppendsMultipleLoggers.txt"
+    let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
 
-  let logger = Logger(label: "Test")
-  logger.error("An error has occurred. This is a test.")
-  let fileSize1 = try getFileSize(file: logFileURL)
+    print("File location: \(logFileURL)")
 
-  logger.error("An error has occurred. This is a test.")
-  let fileSize2 = try getFileSize(file: logFileURL)
+    if FileManager.default.fileExists(atPath: logFileURL.path) {
+      try FileManager.default.removeItem(at: logFileURL)
+    }
 
-  #expect(fileSize2 > fileSize1)
+    try LoggingSystem.bootstrapInternal(
+      FileLogger.handler(url: logFileURL)
+    )
 
-  try FileManager.default.removeItem(at: logFileURL)
-}
+    let logger1 = Logger(label: "Logger 1")
+    logger1.error("An error has occurred. This is a test.")
+    let fileSize1 = try getFileSize(file: logFileURL)
 
-@Test func logToFileAppendsMultipleLoggers() async throws {
-  let logFileName = "logToFileAppendsMultipleLoggers.txt"
-  let logFileURL = try getDocumentsDirectory().appendingPathComponent(logFileName)
+    let logger2 = Logger(label: "Logger 2")
+    logger2.error("An error has occurred. This is a test.")
+    let fileSize2 = try getFileSize(file: logFileURL)
 
-  print("File location: \(logFileURL)")
+    #expect(fileSize2 > fileSize1)
 
-  if FileManager.default.fileExists(atPath: logFileURL.path) {
     try FileManager.default.removeItem(at: logFileURL)
   }
 
-  try LoggingSystem.bootstrapInternal(
-    FileLogger.handler(url: logFileURL)
-  )
+  @Test func limitFileSize() async throws {
+    let logFileName = "limitFileSize.txt"
+    let logsDirectoryURL = try createLogsDirectory()
+    let logFileURL = logsDirectoryURL.appendingPathComponent(logFileName)
 
-  let logger1 = Logger(label: "Logger 1")
-  logger1.error("An error has occurred. This is a test.")
-  let fileSize1 = try getFileSize(file: logFileURL)
+    let originalString = "This is a test of great importance."
+    let repeatedString = String(repeating: originalString, count: 100)
+    let data = repeatedString.data(using: .utf8)!
+    try data.write(to: logFileURL, options: .atomic)
 
-  let logger2 = Logger(label: "Logger 2")
-  logger2.error("An error has occurred. This is a test.")
-  let fileSize2 = try getFileSize(file: logFileURL)
+    try LoggingSystem.bootstrapInternal(
+      FileLogger.handler(url: logFileURL, maxFileSize: 1000)
+    )
 
-  #expect(fileSize2 > fileSize1)
+    let logger = Logger(label: "Test")
 
-  try FileManager.default.removeItem(at: logFileURL)
+    for _ in 0..<10 {
+      logger.error("An error has occurred. This is a test.")
+    }
+
+    let fileSize = try getFileSize(file: logFileURL)
+    #expect(fileSize < 1000)
+
+    let lines = try String(contentsOf: logFileURL).split(separator: "\n")
+    #expect(lines.count == 10)
+
+    try deleteLogsDirectory()
+  }
 }
