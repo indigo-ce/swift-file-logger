@@ -40,7 +40,7 @@ public struct FileLogger: LogHandler {
     self.stream = stream
   }
 
-  static func handler(
+  public static func handler(
     url: URL,
     maxFileSize: UInt64 = 1024 * 1024 * 10
   ) throws -> @Sendable (String) -> any LogHandler {
