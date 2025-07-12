@@ -16,7 +16,16 @@ func getDocumentsDirectory() throws -> URL {
     throw TestError.noDocumentDirectory
   }
 
-  return paths[0]
+  let downloadsDir = paths[0]
+  
+  // Ensure the directory exists
+  if !FileManager.default.fileExists(atPath: downloadsDir.path) {
+    try FileManager.default.createDirectory(
+      at: downloadsDir, withIntermediateDirectories: true, attributes: nil
+    )
+  }
+
+  return downloadsDir
 }
 
 @Suite(.serialized) struct FileLoggerTests {
